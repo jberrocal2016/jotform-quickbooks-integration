@@ -24,4 +24,7 @@ def filter_submission_answers(submission, field):
                 if field in value:
                     filtered_answers[key] = value
     
-    return filtered_answers
+    # Sort the filtered_answers by the "order" field
+    sorted_answers = dict(sorted(filtered_answers.items(), key=lambda item: int(item[1].get("order", 0))))
+    
+    return sorted_answers
