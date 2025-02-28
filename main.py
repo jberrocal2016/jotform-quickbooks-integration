@@ -1,7 +1,7 @@
 from api_handlers.jotform_api import get_latest_submission
 #from api_handlers.quickbooks_api import send_to_quickbooks
 from filters.submission_filter import filter_submission_answers
-from utils.file_utils import save_to_json_file
+from utils.file_utils import save_to_json_file, save_custom_data_to_text_file
 
 def main():
     """
@@ -22,6 +22,7 @@ def main():
 
         # Save the filtered answers to a JSON file
         save_to_json_file(filtered_answers, 'filtered_answers.json')
+        save_custom_data_to_text_file(filtered_answers, 'filtered_anwers.txt')
         print('Filtered answers have been saved to filtered_answers.json')
 
         #send_to_quickbooks(filtered_answers)
