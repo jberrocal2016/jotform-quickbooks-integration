@@ -1,10 +1,10 @@
-def filter_submission_answers(submission, subendpoint):    
+def filter_submission_answers(submission, field):    
     """
-    Filter submission answers based on the specified subendpoint.
+    Filter submission answers based on the specified field.
     
     Args:
         submission (dict): The submission data.
-        subendpoint (str): The subendpoint to filter answers by.
+        field (str): The field to filter answers by.
     
     Returns:
         dict: The filtered answers.
@@ -19,9 +19,9 @@ def filter_submission_answers(submission, subendpoint):
         if len(submissions) > 0:
             answers = submissions[0].get('answers', {})
 
-            # Filter answers based on the subendpoint
+            # Filter answers based on the field
             for key, value in answers.items():
-                if subendpoint in value:
+                if field in value:
                     filtered_answers[key] = value
     
     return filtered_answers

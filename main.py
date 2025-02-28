@@ -16,9 +16,9 @@ def main():
     if 'error' in latest_submission:
         print(f"Error {latest_submission['error']}: {latest_submission['message']}")
     else:
-        # Filter the answers based on the subendpoint 'answer'
-        subendpoint = 'answer'
-        filtered_answers = filter_submission_answers(latest_submission, subendpoint)
+        # Filter the answers based on the field 'answer'
+        field = 'answer'
+        filtered_answers = filter_submission_answers(latest_submission, field)
 
         # Save the filtered answers to a JSON file
         save_to_json_file(filtered_answers, 'filtered_answers.json')
