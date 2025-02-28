@@ -1,7 +1,7 @@
 import json, os
 
 # Define the directory where JSON files will be saved
-JSON_DIR = 'json_files'
+JSON_DIR = 'submission_files'
 
 def ensure_directory_exists(directory):
     """
@@ -50,7 +50,13 @@ def save_custom_data_to_text_file(submission, filename):
         submission (dict): The submission data.
         filename (str): The name of the text file to save.
     """
-    with open(filename, 'w', encoding='utf-8') as file:
+    # Ensure the directory for the file exists
+    ensure_directory_exists(JSON_DIR)
+    
+    # Get the full file path
+    file_path = get_json_file_path(filename)
+
+    with open(file_path, 'w', encoding='utf-8') as file:
         items = list(submission.items())  # Convert to list
 
         # Process the first 3 fields
