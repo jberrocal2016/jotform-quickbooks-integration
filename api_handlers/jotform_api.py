@@ -21,7 +21,7 @@ def get_latest_submission():
     }
     params = {
         'limit': 1,
-        'orderBy[0]': '-created_at'
+        'orderby': 'created_at'
     }
 
     # Send the GET request to JotForm API
