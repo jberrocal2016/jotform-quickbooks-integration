@@ -8,6 +8,27 @@ load_environment_variables()
 API_KEY = get_env_variable('API_KEY')
 FORM_ID = get_env_variable('FORM_ID')
 
+def handle_response(response):
+    """
+    Handle the API response and return the result or error message.
+    
+    Args:
+        response (requests.Response): The response object from the API call.
+    
+    Returns:
+        dict: The parsed JSON response or an error message.
+    """
+
+    # Check if the response status code indicates an error
+    if response.status_code != 200:
+        return {
+            'error': response.status_code,
+            'message': response.text
+        }
+    
+    # Return the JSON response
+    return response.json()
+
 def get_latest_submission():
     """
     Fetch the latest submission from JotForm API.
@@ -27,13 +48,23 @@ def get_latest_submission():
     # Send the GET request to JotForm API
     response = requests.get(url, headers=headers, params=params)
     
-    # Check if the response status code indicates an error
-    if response.status_code != 200:
-        return {
-            'error': response.status_code,
-            'message': response.text
-        }
+    return handle_response(response)
+
+def get_submission_by_id(submission_id):
+    """
+    Fetch a specific submission from JotForm API using the submission ID.
     
-    # Return the JSON response
-    return response.json()
+    Args:
+        submission_id (str): The ID of the submission to fetch.
+    
+    Returns:
+        dict: The submission data or error message.
+    """
+    url = f"https://api.jotform.com/submission/{submission_id}"
+    headers = {'APIKEY': API_KEY}
+
+    # Send the GET request to JotForm API
+    response = requests.get(url, headers=headers)
+
+    return handle_response(response)
 

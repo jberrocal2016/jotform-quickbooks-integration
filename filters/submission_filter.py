@@ -15,15 +15,17 @@ def filter_submission_answers(submission, field):
     if 'content' in submission:
         submissions = submission['content']
 
-        # Ensure there is at least one submission
-        if len(submissions) > 0:
-            answers = submissions[0].get('answers', {})
+        # Ensure submissions is either a list or a dict
+        answers = (submissions[0].get('answers', {})
+                   if isinstance(submissions, list) 
+                   else submissions.get('answers', {}))
 
-            # Filter answers based on the field
-            for key, value in answers.items():
-                if field in value:
-                    filtered_answers[key] = value
-    
+
+        # Filter answers based on the field
+        for key, value in answers.items():
+            if field in value:
+                filtered_answers[key] = value
+
     # Sort the filtered_answers by the "order" field
     sorted_answers = dict(sorted(filtered_answers.items(), key=lambda item: int(item[1].get("order", 0))))
     
