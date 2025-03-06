@@ -76,7 +76,7 @@ def save_custom_data_to_text_file(submission, filename):
         file.write("\n")
 
         # Process the remaining fields
-        for _, value in items[4:]:  # Iterate over items after the 4th
+        for key, value in items[4:]:  # Iterate over items after the 4th
 
             # Split mrows into individual rows
             mrows = value.get("mrows", "N/A").split("|")  # Split by '|' delimiter
@@ -84,8 +84,12 @@ def save_custom_data_to_text_file(submission, filename):
             # Flatten the nested answer list
             answers = [ans[0] if ans else "" for ans in value.get("answer", [])]  # Flatten answers
 
+            # Extract the product code from the text field
+            text = value.get("text", "N/A")
+            product_code = text.split('-')[0] if '-' in text else ""
+
             # Pair mrows and answers together
-            for row, answer in zip(mrows, answers):
+            for description, quantity in zip(mrows, answers):
                 # Only write rows with a non-empty answer
-                if answer.strip():  # Check if answer is not empty
-                    file.write(f"{row.strip()}: {answer.strip()}\n")
+                if quantity.strip():  # Check if answer is not empty
+                    file.write(f"{product_code} | {description.strip()} | {quantity.strip()}\n")
