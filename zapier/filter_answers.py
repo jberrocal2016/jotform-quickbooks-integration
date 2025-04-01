@@ -231,7 +231,7 @@ def process_submission(input_data):
     answers_with_field = filter_endpoints_with_field(answers, 'answer')
 
     # Extract the email value
-    email = extract_email(answers_with_field)
+    email = extract_email(answers_with_field).strip().lower()
 
     # Filter endpoints with type "control_matrix"
     control_matrix_endpoints = filter_endpoints_by_type(answers_with_field, 'control_matrix')
