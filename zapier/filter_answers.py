@@ -3,9 +3,10 @@ input_data= {}
 # The following code snippet is designed for integration with Zapier workflows.
 import requests, json
 
-# Global list of customer emails who prefer line-list invoices
+# Global lists
+SUBMISSION_ID = input_data['SUBMISSION_ID']
+API_KEY = input_data['API_KEY']
 LINE_LIST_CUSTOMERS = input_data.get('LINE_LIST_CUSTOMERS', '{}')
-# Global variable of product ids 
 PRODUCT_IDS = json.loads(input_data.get('PRODUCT_IDS', '{}'))
 
 def get_submission_by_id():
@@ -15,8 +16,8 @@ def get_submission_by_id():
     Returns:
         dict: The submission data or error message.
     """
-    url = f"https://api.jotform.com/submission/{input_data['SUBMISSION_ID']}"
-    headers = {'APIKEY': input_data['API_KEY']}
+    url = f"https://api.jotform.com/submission/{SUBMISSION_ID}"
+    headers = {'APIKEY': API_KEY}
     
     try:
         response = requests.get(url, headers=headers)
@@ -95,6 +96,11 @@ def filter_email_and_salesrep(answers: dict[str, dict]) -> tuple[str, str]:
         # Break early if both values have been found
         if email and sales_rep:
             break
+    
+    # Check if sales_rep is "JOHN" (case-insensitive) and change it to "JE"
+    if sales_rep.upper() == "JOHN":
+        sales_rep = "JE"
+
     return email, sales_rep
 
 
@@ -128,25 +134,24 @@ def split_mrows_values(answers: dict[str, dict]) -> dict[str, dict]:
     return answers
 
 
-def flatten_answers_and_duplicate_mrows(answers):
+def flatten_answers_and_duplicate_mrows(answers: dict[str, dict[str, object]]) -> dict[str, dict[str, object]]:
     """
     Flatten the 'answer' field and handle duplication of 'mrows' to match the flattened answers.
 
     Args:
-        answers (dict): A dictionary of answers to process.
+        answers (dict[str, dict[str, object]]): A dictionary of answers to process.
 
     Returns:
-        dict: Updated answers with flattened answers and duplicated mrows.
+        dict[str, dict[str, object]]: Updated answers with flattened answers and duplicated mrows.
     """
     for key, value in answers.items():
         if 'answer' in value:
-            # Flatten the answers
-            flattened_answer = []
-            duplicated_mrows = []
+            flattened_answer: list[object] = []
+            duplicated_mrows: list[object] = []
             
             if isinstance(value['answer'], list):
                 for i, item in enumerate(value['answer']):
-                    current_mrow = value['mrows'][i] if i < len(value['mrows']) else ''
+                    current_mrow: object = value['mrows'][i] if i < len(value['mrows']) else ''
                     if isinstance(item, list):  # Handle nested lists
                         flattened_answer.extend(item)
                         duplicated_mrows.extend([current_mrow] * len(item))
@@ -162,37 +167,42 @@ def flatten_answers_and_duplicate_mrows(answers):
             value['mrows'] = duplicated_mrows
     return answers
 
-def sort_by_order(data):
+
+def sort_by_order(data: dict[str, dict[str, object]]) -> dict[str, dict[str, object]]:
     """Sort a dictionary's values by the 'order' field."""
     return dict(sorted(data.items(), key=lambda item: int(item[1].get('order', float('inf')))))
 
-def combine_descriptions_and_quantities(sorted_dict):
+
+def combine_descriptions_and_quantities(
+    sorted_dict: dict[str, dict[str, object]]
+) -> tuple[list[object], list[object]]:
     """
     Combine all 'mrows' and 'answer' fields from the sorted dictionary into separate lists.
 
     Args:
-        sorted_dict (dict): A sorted dictionary of filtered answers.
+        sorted_dict (dict[str, dict[str, object]]): A sorted dictionary of filtered answers.
 
     Returns:
-        tuple: Two lists - one containing all 'mrows' (descriptions) and the other containing all 'answers' (quantities).
+        tuple[list[object], list[object]]: Two lists - one containing all 'mrows' (descriptions) and the other containing all 'answer' (quantities).
     """
-    all_descriptions = []
-    all_quantities = []
+    all_descriptions: list[object] = []
+    all_quantities: list[object] = []
     for item in sorted_dict.values():
         all_descriptions.extend(item.get("mrows", []))
         all_quantities.extend(item.get("answer", []))
     return all_descriptions, all_quantities
 
-def extract_text_before_dash(filtered_answers):
+
+def extract_text_before_dash(filtered_answers: dict[str, dict[str, object]]) -> list[str]:
     """
     Extract the part of the 'text' field (product code) before the '-' character.
 
     Args:
-        filtered_answers (dict): The filtered answers dictionary.
+        filtered_answers (dict[str, dict[str, object]]): The filtered answers dictionary.
 
     Returns:
-        list: A list of all extracted text values before the dash,
-              repeated for each answer in the corresponding 'answer' list.
+        list[str]: A list of all extracted text values before the dash,
+                   repeated for each answer in the corresponding 'answer' list.
     """
     return [
         txt.split('-', 1)[0].strip()
@@ -202,37 +212,44 @@ def extract_text_before_dash(filtered_answers):
     ]
 
 
-def filter_empty_quantities(all_descriptions, all_quantities, all_product_codes):
+def filter_out_empty_quantities(
+    all_descriptions: list[str],
+    all_quantities: list[object],
+    all_product_codes: list[str]
+) -> tuple[list[str], list[float], list[str]]:
     """
     Filter out empty or non-numeric values in all_quantities 
     and remove corresponding entries from all_descriptions and all_product_codes.
 
     Args:
-        all_descriptions (list): List of descriptions.
-        all_quantities (list): List of quantities.
-        all_product_codes (list): List of product codes.
+        all_descriptions (list[str]): List of descriptions.
+        all_quantities (list[object]): List of quantities which could be str, int, or float.
+        all_product_codes (list[str]): List of product codes.
 
     Returns:
-        tuple: Filtered lists of descriptions, quantities, and product codes.
+        tuple[list[str], list[float], list[str]]:
+            Filtered lists of descriptions, quantities (as floats), and product codes.
     """
-    filtered_descriptions = []
-    filtered_quantities = []
-    filtered_product_codes = []
+    filtered_descriptions: list[str] = []
+    filtered_quantities: list[float] = []
+    filtered_product_codes: list[str] = []
 
     for description, quantity, product_code in zip(all_descriptions, all_quantities, all_product_codes):
         try:
-            # Attempt to convert to a float, if successful, keep the row
-            if isinstance(quantity, (int, float)) or (isinstance(quantity, str) and quantity.isdigit()):
-                filtered_descriptions.append(description)
-                filtered_quantities.append(quantity)
-                filtered_product_codes.append(product_code)
-        except ValueError:
-            # If conversion fails, simply skip this row
+            # Try to convert the quantity to float.
+            # This conversion will raise ValueError if the value contains extraneous characters like '<', '>', or letters.
+            num = float(quantity)
+            filtered_descriptions.append(description)
+            filtered_quantities.append(num)
+            filtered_product_codes.append(product_code)
+        except (ValueError, TypeError):
+            # If conversion fails, skip this row.
             continue
 
     return filtered_descriptions, filtered_quantities, filtered_product_codes
 
-def map_product_codes_to_ids(product_codes):
+
+def map_product_codes_to_ids(product_codes: list[str], default_id: str = "2215") -> list[str]:
     """
     Map product codes to product ids using a default value for missing codes.
 
@@ -243,10 +260,14 @@ def map_product_codes_to_ids(product_codes):
         list: A list of product ids corresponding to the product codes.
               If a code doesn't exist in the dictionary, the default id "2215" is used.
     """
-    return [PRODUCT_IDS.get(code, "2215") for code in product_codes]
+    return [PRODUCT_IDS.get(code, default_id) for code in product_codes]
 
 
-def create_bulk_order(all_descriptions, all_quantities, all_product_codes):
+def create_bulk_order(
+    all_descriptions: list[str],
+    all_quantities: list[int],
+    all_product_ids: list[str]
+) -> tuple[list[str], list[int], list[str]]:
     """
     Create a bulk order by grouping items with the same product code and summing quantities.
     Extract the common part of all descriptions to form the bulk description.
@@ -254,41 +275,41 @@ def create_bulk_order(all_descriptions, all_quantities, all_product_codes):
     Args:
         all_descriptions (list): List of detailed descriptions.
         all_quantities (list): List of quantities.
-        all_product_codes (list): List of product codes.
+        all_product_ids (list): List of product ids.
 
     Returns:
-        tuple: Three lists - bulk product codes, bulk descriptions, and bulk total quantities.
+        tuple: Three lists - bulk descriptions, bulk quantities and bulk product ids.
     """
     from os.path import commonprefix
 
     # Group items by product code
     grouped_items = {}
-    for product_code, quantity, description in zip(all_product_codes, all_quantities, all_descriptions):
-        if product_code not in grouped_items:
-            grouped_items[product_code] = {'descriptions': [], 'total_quantity': 0}
-        grouped_items[product_code]['descriptions'].append(description)
-        grouped_items[product_code]['total_quantity'] += int(quantity)
+    for description, quantity, product_id in zip(all_descriptions, all_quantities, all_product_ids):
+        if product_id not in grouped_items:
+            grouped_items[product_id] = {'descriptions': [], 'total_quantity': 0}
+        grouped_items[product_id]['descriptions'].append(description)
+        grouped_items[product_id]['total_quantity'] += int(quantity)
 
-    # Prepare the output lists
-    bulk_product_codes = []
+    # Prepare the output lists    
     bulk_descriptions = []
     bulk_quantities = []
+    bulk_product_ids = []
 
-    for product_code, data in grouped_items.items():
+    for product_id, data in grouped_items.items():
         descriptions = data['descriptions']
         total_quantity = data['total_quantity']
 
         # Extract the common prefix from descriptions
         bulk_description = commonprefix(descriptions).strip()
 
-        # Add to the output lists
-        bulk_product_codes.append(product_code)
+        # Add to the output lists        
         bulk_descriptions.append(bulk_description)
         bulk_quantities.append(total_quantity)
+        bulk_product_ids.append(product_id)
 
-    return bulk_descriptions, bulk_quantities, bulk_product_codes
+    return bulk_descriptions, bulk_quantities, bulk_product_ids
 
-def process_submission(input_data):
+def process_submission(input_data: dict[str, object]) -> dict[str, object]:
     """
     Process the input JSON data to filter, sort, and return combined results.
 
@@ -333,7 +354,7 @@ def process_submission(input_data):
     all_product_codes = extract_text_before_dash(sorted_answers)
 
     # Filter out empty quantities and corresponding rows
-    all_descriptions, all_quantities, all_product_codes = filter_empty_quantities(
+    all_descriptions, all_quantities, all_product_codes = filter_out_empty_quantities(
     all_descriptions, all_quantities, all_product_codes
 )
     # Converting product codes into product ids
