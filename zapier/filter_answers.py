@@ -280,8 +280,6 @@ def create_bulk_order(
     Returns:
         tuple: Three lists - bulk descriptions, bulk quantities and bulk product ids.
     """
-    from os.path import commonprefix
-
     # Group items by product code
     grouped_items = {}
     for description, quantity, product_id in zip(all_descriptions, all_quantities, all_product_ids):
@@ -299,8 +297,11 @@ def create_bulk_order(
         descriptions = data['descriptions']
         total_quantity = data['total_quantity']
 
-        # Extract the common prefix from descriptions
-        bulk_description = commonprefix(descriptions).strip()
+        # Extract the base description from the first description in the group
+        if descriptions and '-' in descriptions[0]:
+            bulk_description = descriptions[0].split('-', 1)[0].strip()
+        else:
+            bulk_description = descriptions[0] if descriptions else ''
 
         # Add to the output lists        
         bulk_descriptions.append(bulk_description)
