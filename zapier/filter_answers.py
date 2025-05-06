@@ -6,8 +6,18 @@ import requests, json
 # Global lists
 SUBMISSION_ID = input_data['SUBMISSION_ID']
 API_KEY = input_data['API_KEY']
-LINE_LIST_CUSTOMERS = input_data.get('LINE_LIST_CUSTOMERS', '{}')
-PRODUCT_IDS = json.loads(input_data.get('PRODUCT_IDS', '{}'))
+
+PRODUCT_CODES = input_data.get('PRODUCT_CODES', '{}').split(',')
+PRODUCT_IDS = input_data.get('PRODUCT_IDS', '{}').split(',')
+PRODUCT_DICT = dict(zip(PRODUCT_CODES,PRODUCT_IDS))
+
+LINE_LIST_CUSTOMERS = input_data.get('LINE_LIST_CUSTOMERS', '{}').split(',')
+
+CLIENT_EMAILS = [email.lower() for email in input_data.get('CLIENT_EMAILS', '{}').split(',')]
+
+CLIENT_IDS = input_data.get('CLIENT_IDS', '{}').split(',')
+
+CLIENT_DICT = dict(zip(CLIENT_EMAILS,CLIENT_IDS))
 
 def get_submission_by_id():
     """
@@ -96,11 +106,10 @@ def filter_email_and_salesrep(answers: dict[str, dict]) -> tuple[str, str]:
         # Break early if both values have been found
         if email and sales_rep:
             break
-    
     # Check if sales_rep is "JOHN" (case-insensitive) and change it to "JE"
     if sales_rep.upper() == "JOHN":
         sales_rep = "JE"
-
+        
     return email, sales_rep
 
 
@@ -260,8 +269,28 @@ def map_product_codes_to_ids(product_codes: list[str], default_id: str = "2215")
         list: A list of product ids corresponding to the product codes.
               If a code doesn't exist in the dictionary, the default id "2215" is used.
     """
-    return [PRODUCT_IDS.get(code, default_id) for code in product_codes]
+    return [PRODUCT_DICT.get(code, default_id) for code in product_codes]
 
+def get_client_id(client_dict: dict[str, str], query_email: str) -> str:
+    """
+    Given a dictionary `client_dict` where keys are comma-separated email strings
+    and values are client IDs stored as strings, this function builds a lookup 
+    mapping for each individual email to its corresponding client ID. 
+    If the query_email is not found, it returns "1754" by default.
+
+    Parameters:
+    - client_dict: Dictionary where keys are strings containing emails separated by commas,
+                   and the values are client IDs (str).
+    - query_email: The email address to locate.
+
+    Returns:
+    - The client ID (str) if found, or "1754" if the email is not present.
+    """
+    lookup: dict[str, str] = {}
+    for email_str, client_id in client_dict.items():
+        for email in email_str.split(','):
+            lookup[email.strip()] = client_id
+    return lookup.get(query_email, "1754")
 
 def create_bulk_order(
     all_descriptions: list[str],
@@ -309,7 +338,7 @@ def create_bulk_order(
         bulk_product_ids.append(product_id)
 
     return bulk_descriptions, bulk_quantities, bulk_product_ids
-
+    
 def process_submission(input_data: dict[str, object]) -> dict[str, object]:
     """
     Process the input JSON data to filter, sort, and return combined results.
@@ -325,7 +354,7 @@ def process_submission(input_data: dict[str, object]) -> dict[str, object]:
     
     # Check if the input or content is missing
     if not input_data or 'content' not in submission:
-        return {"email": "", "sales_rep":"", "all_descriptions": [], "all_quantities": [], "all_product_ids": []}
+        return {"client_id": "","email": "", "sales_rep":"", "all_descriptions": [], "all_quantities": [], "all_product_ids": []}
 
     # Extract the answers field
     answers = filter_answers(submission)
@@ -361,6 +390,9 @@ def process_submission(input_data: dict[str, object]) -> dict[str, object]:
     # Converting product codes into product ids
     all_product_ids = map_product_codes_to_ids(all_product_codes)
 
+    # Finding Client Id
+    client_id = get_client_id(CLIENT_DICT, email)
+
     if email not in LINE_LIST_CUSTOMERS:
         # Creating bulk order
         bulk_descriptions, bulk_quantities, bulk_product_ids = create_bulk_order(
@@ -368,15 +400,17 @@ def process_submission(input_data: dict[str, object]) -> dict[str, object]:
 
         # Return the final result (bulk order)
         return {
-        "email": email,
-        "sales_rep": sales_rep,
-        "all_descriptions": bulk_descriptions,
-        "all_quantities": bulk_quantities,
-        "all_product_ids": bulk_product_ids
+            "client_id": client_id,
+            "email": email,
+            "sales_rep": sales_rep,
+            "all_descriptions": bulk_descriptions,
+            "all_quantities": bulk_quantities,
+            "all_product_ids": bulk_product_ids
     }
 
     # Return the final result (line list)
     return {
+        "client_id": client_id,        
         "email": email,
         "sales_rep": sales_rep,
         "all_descriptions": all_descriptions,
