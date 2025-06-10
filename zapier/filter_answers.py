@@ -3,32 +3,32 @@ input_data= {}
 # The following code snippet is designed for integration with Zapier workflows.
 import requests, json
 
-# Global lists
+# Jotform Credentials
 SUBMISSION_ID = input_data['SUBMISSION_ID']
 API_KEY = input_data['API_KEY']
 
+# product_ids-table
 PRODUCT_CODES = input_data.get('PRODUCT_CODES', '{}').split(',')
 PRODUCT_IDS = input_data.get('PRODUCT_IDS', '{}').split(',')
-PRODUCT_DICT = dict(zip(PRODUCT_CODES,PRODUCT_IDS))
+PRODUCT_DICT = dict(zip(PRODUCT_CODES, PRODUCT_IDS))
 
-LINE_LIST_CUSTOMERS = input_data.get('LINE_LIST_CUSTOMERS', '{}').split(',')
+# line_list_customers-table
+LINE_LIST_CUSTOMERS = [customer.lower() for customer in input_data.get('LINE_LIST_CUSTOMERS', '').split(',') if customer]
 
-CLIENT_EMAILS = [email.lower() for email in input_data.get('CLIENT_EMAILS', '{}').split(',')]
+# client_ids-table
+CLIENT_ID = input_data.get('CLIENT_ID', "1754")  # Default ID 1754
 
-CLIENT_IDS = input_data.get('CLIENT_IDS', '{}').split(',')
-
-CLIENT_DICT = dict(zip(CLIENT_EMAILS,CLIENT_IDS))
 
 def get_submission_by_id():
     """
     Fetch a specific submission from JotForm API using the submission ID.
-    
+
     Returns:
-        dict: The submission data or error message.
+        dict: The submission data or an error message.
     """
     url = f"https://api.jotform.com/submission/{SUBMISSION_ID}"
     headers = {'APIKEY': API_KEY}
-    
+
     try:
         response = requests.get(url, headers=headers)
         response.raise_for_status()  # Raises an HTTPError for bad responses
@@ -37,7 +37,7 @@ def get_submission_by_id():
             'error': 'RequestException',
             'message': str(e)
         }
-    
+
     try:
         return response.json()
     except ValueError:
@@ -47,95 +47,67 @@ def get_submission_by_id():
         }
 
 
-def filter_answers(submission: dict) -> dict:
+def filter_submission(submission: dict) -> dict:
     """
-    Extract the 'answers' field from the given submission.
-
-    Args:
-        submission (dict): A dictionary representing a form submission that should contain
-                           a 'content' key with either a list or a dictionary that holds 'answers'.
-
-    Returns:
-        dict: The extracted answers, or an empty dict if not found.
+    Extract the 'answers' field from the submission and filter endpoints that contain the "answer" field.
     """
+    # Extract answers field
     if 'content' in submission:
-        answers = submission['content']
-        if isinstance(answers, list):
-            return answers[0].get('answers', {}) if answers else {}
-        return answers.get('answers', {})
-    return {}
+        answers_data = submission['content']
+        if isinstance(answers_data, list):
+            answers = answers_data[0].get('answers', {}) if answers_data else {}
+        else:
+            answers = answers_data.get('answers', {})
+    else:
+        answers = {}
 
-
-def filter_endpoints_with_answer(answers: dict[str, object]) -> dict[str, object]:
-    """
-    Filter the endpoints within answers that contain the "answer" field.
-
-    Args:
-        answers (dict[str, object]): A dictionary of answers to be filtered.
-
-    Returns:
-        dict[str, object]: Filtered endpoints containing the "answer" field.
-    """
-    return {
+    # Filter endpoints with "answer" field
+    filtered_endpoints = {
         key: value
         for key, value in answers.items()
         if isinstance(value, dict) and "answer" in value
     }
+    return filtered_endpoints
 
 
-def filter_email_and_salesrep(answers: dict[str, dict]) -> tuple[str, str]:
+def sort_by_order(data: dict) -> dict:
     """
-    Extract both the email and sales representative values from answers in a single pass.
-
-    Args:
-        answers (dict[str, dict]): The dictionary of answers, where each value is expected
-                                   to be a dictionary with keys like 'type' and 'answer'.
-
-    Returns:
-        tuple[str, str]: A tuple (email, sales_rep), where each element is a string.
-                        Returns empty strings if not found.
+    Sort a dictionary's values based on the 'order' field.
     """
-    email = ""
-    sales_rep = ""
-    for value in answers.values():
-        control_type = value.get("type")
-        if control_type == "control_email" and not email:
-            email = value.get("answer", "").strip().lower()
-        elif control_type == "control_dropdown" and not sales_rep:
-            sales_rep = value.get("answer", "")
-        # Break early if both values have been found
-        if email and sales_rep:
+    return dict(sorted(data.items(), key=lambda item: int(item[1].get('order', float('inf')))))
+
+
+def filter_answers_by_type(answers: dict, target_type: str, single: bool = True, extract: bool = True, require_list_answer: bool = False) -> dict:
+    """
+    Filter `answers` for entries matching `target_type`.  
+
+    - If `require_list_answer` is True, we additionally demand that
+      the `"answer"` field is a Python list (not a string or HTML blob).  
+    - If `extract` is True, we return just the answer value;  
+      otherwise we return the full entry so you can still see its keys.  
+    - If `single` is True, we stop on the first match;  
+      set it False to gather _all_ matches.
+    """
+    filtered = {}
+    for key, value in answers.items():
+        if value.get("type") != target_type:
+            continue
+
+        ans = value.get("answer", "")
+        if require_list_answer and not isinstance(ans, list):
+            continue
+
+        # good block
+        filtered[key] = ans if extract else value
+        if single:
             break
-    # Check if sales_rep is "JOHN" (case-insensitive) and change it to "JE"
-    if sales_rep.upper() == "JOHN":
-        sales_rep = "JE"
-        
-    return email, sales_rep
+
+    return filtered
 
 
-def filter_type_control_matrix(answers: dict[str, dict]) -> dict[str, dict]:
+def split_mrows_values(answers: dict) -> dict:
     """
-    Filter the fields within answers that have the type 'control_matrix'.
-
-    Args:
-        answers (dict[str, dict]): A dictionary of answer fields to be filtered.
-
-    Returns:
-        dict[str, dict]: Filtered fields that are of type 'control_matrix'.
-    """
-    return {key: value for key, value in answers.items() if value.get("type") == "control_matrix"}
-
-
-def split_mrows_values(answers: dict[str, dict]) -> dict[str, dict]:
-    """
-    Split the 'mrows' field by '|' in each endpoint and replace it with the list of split values.
-
-    Args:
-        answers (dict[str, dict]): A dictionary of answers to process, where each value represents an endpoint 
-                                   that might contain an 'mrows' field.
-
-    Returns:
-        dict[str, dict]: The updated answers, where each 'mrows' string is replaced with a list of values.
+    Split the 'mrows' field by '|' in each endpoint.
     """
     for key, value in answers.items():
         if 'mrows' in value and value['mrows']:
@@ -143,25 +115,19 @@ def split_mrows_values(answers: dict[str, dict]) -> dict[str, dict]:
     return answers
 
 
-def flatten_answers_and_duplicate_mrows(answers: dict[str, dict[str, object]]) -> dict[str, dict[str, object]]:
+def flatten_answers_and_duplicate_mrows(answers: dict) -> dict:
     """
-    Flatten the 'answer' field and handle duplication of 'mrows' to match the flattened answers.
-
-    Args:
-        answers (dict[str, dict[str, object]]): A dictionary of answers to process.
-
-    Returns:
-        dict[str, dict[str, object]]: Updated answers with flattened answers and duplicated mrows.
+    Flatten the 'answer' field and duplicate 'mrows', ensuring they align.
     """
     for key, value in answers.items():
         if 'answer' in value:
-            flattened_answer: list[object] = []
-            duplicated_mrows: list[object] = []
-            
+            flattened_answer = []
+            duplicated_mrows = []
+
             if isinstance(value['answer'], list):
                 for i, item in enumerate(value['answer']):
-                    current_mrow: object = value['mrows'][i] if i < len(value['mrows']) else ''
-                    if isinstance(item, list):  # Handle nested lists
+                    current_mrow = value['mrows'][i] if i < len(value.get('mrows', [])) else ''
+                    if isinstance(item, list):  # In case of nested lists
                         flattened_answer.extend(item)
                         duplicated_mrows.extend([current_mrow] * len(item))
                     else:
@@ -170,252 +136,162 @@ def flatten_answers_and_duplicate_mrows(answers: dict[str, dict[str, object]]) -
             else:
                 flattened_answer = [value['answer']]
                 duplicated_mrows = value['mrows']
-            
-            # Update the values
+
             value['answer'] = flattened_answer
             value['mrows'] = duplicated_mrows
     return answers
 
 
-def sort_by_order(data: dict[str, dict[str, object]]) -> dict[str, dict[str, object]]:
-    """Sort a dictionary's values by the 'order' field."""
-    return dict(sorted(data.items(), key=lambda item: int(item[1].get('order', float('inf')))))
-
-
-def combine_descriptions_and_quantities(
-    sorted_dict: dict[str, dict[str, object]]
-) -> tuple[list[object], list[object]]:
+def combine_descriptions_and_quantities(flattened_endpoints: dict) -> tuple:
     """
-    Combine all 'mrows' and 'answer' fields from the sorted dictionary into separate lists.
-
-    Args:
-        sorted_dict (dict[str, dict[str, object]]): A sorted dictionary of filtered answers.
-
-    Returns:
-        tuple[list[object], list[object]]: Two lists - one containing all 'mrows' (descriptions) and the other containing all 'answer' (quantities).
+    Combine all 'mrows' (descriptions) and 'answer' (quantities) fields from the sorted endpoints.
     """
-    all_descriptions: list[object] = []
-    all_quantities: list[object] = []
-    for item in sorted_dict.values():
+    all_descriptions = []
+    all_quantities = []
+    for item in flattened_endpoints.values():
         all_descriptions.extend(item.get("mrows", []))
         all_quantities.extend(item.get("answer", []))
     return all_descriptions, all_quantities
 
 
-def extract_text_before_dash(filtered_answers: dict[str, dict[str, object]]) -> list[str]:
+def extract_text_before_dash(flattened_endpoints: dict) -> list:
     """
-    Extract the part of the 'text' field (product code) before the '-' character.
-
-    Args:
-        filtered_answers (dict[str, dict[str, object]]): The filtered answers dictionary.
-
-    Returns:
-        list[str]: A list of all extracted text values before the dash,
-                   repeated for each answer in the corresponding 'answer' list.
+    Extract the part of the 'text' value (usually a product code) before the '-' character,
+    repeated for each corresponding answer.
     """
-    return [
-        txt.split('-', 1)[0].strip()
-        for data in filtered_answers.values()
-        if '-' in (txt := data.get('text', ''))
-        for _ in range(len(data.get('answer', [])))
-    ]
+    result = []
+    for data in flattened_endpoints.values():
+        txt = data.get('text', '')
+        if '-' not in txt:
+            continue
+        product_code = txt.split('-', 1)[0].strip()
+        count = len(data.get('answer', []))
+        # Duplicate the product code 'count' times
+        result.extend([product_code] * count)
+    return result
 
 
-def filter_out_empty_quantities(
-    all_descriptions: list[str],
-    all_quantities: list[object],
-    all_product_codes: list[str]
-) -> tuple[list[str], list[float], list[str]]:
+def filter_out_empty_quantities(all_descriptions: list, all_quantities: list, all_product_codes: list) -> tuple:
     """
-    Filter out empty or non-numeric values in all_quantities 
-    and remove corresponding entries from all_descriptions and all_product_codes.
-
-    Args:
-        all_descriptions (list[str]): List of descriptions.
-        all_quantities (list[object]): List of quantities which could be str, int, or float.
-        all_product_codes (list[str]): List of product codes.
-
-    Returns:
-        tuple[list[str], list[float], list[str]]:
-            Filtered lists of descriptions, quantities (as floats), and product codes.
+    Remove rows that have non-numeric or empty quantity values.
     """
-    filtered_descriptions: list[str] = []
-    filtered_quantities: list[float] = []
-    filtered_product_codes: list[str] = []
+    filtered_descriptions = []
+    filtered_quantities = []
+    filtered_product_codes = []
 
     for description, quantity, product_code in zip(all_descriptions, all_quantities, all_product_codes):
         try:
-            # Try to convert the quantity to float.
-            # This conversion will raise ValueError if the value contains extraneous characters like '<', '>', or letters.
             num = float(quantity)
             filtered_descriptions.append(description)
             filtered_quantities.append(num)
             filtered_product_codes.append(product_code)
         except (ValueError, TypeError):
-            # If conversion fails, skip this row.
             continue
 
     return filtered_descriptions, filtered_quantities, filtered_product_codes
 
 
-def map_product_codes_to_ids(product_codes: list[str], default_id: str = "2215") -> list[str]:
+def map_product_codes_to_ids(product_codes: list, default_id: str = "2215") -> list:
     """
-    Map product codes to product ids using a default value for missing codes.
-
-    Args:
-        product_codes (list): A list of product codes.
-
-    Returns:
-        list: A list of product ids corresponding to the product codes.
-              If a code doesn't exist in the dictionary, the default id "2215" is used.
+    Map product codes to product ids, using a default if not found.
     """
     return [PRODUCT_DICT.get(code, default_id) for code in product_codes]
 
-def get_client_id(client_dict: dict[str, str], query_email: str) -> str:
+
+def create_bulk_order(all_descriptions: list, all_quantities: list, all_product_ids: list) -> tuple:
     """
-    Given a dictionary `client_dict` where keys are comma-separated email strings
-    and values are client IDs stored as strings, this function builds a lookup 
-    mapping for each individual email to its corresponding client ID. 
-    If the query_email is not found, it returns "1754" by default.
-
-    Parameters:
-    - client_dict: Dictionary where keys are strings containing emails separated by commas,
-                   and the values are client IDs (str).
-    - query_email: The email address to locate.
-
-    Returns:
-    - The client ID (str) if found, or "1754" if the email is not present.
+    Create a bulk order by grouping items with the same product id and summing their quantities.
+    Also, extract the common base description.
     """
-    lookup: dict[str, str] = {}
-    for email_str, client_id in client_dict.items():
-        for email in email_str.split(','):
-            lookup[email.strip()] = client_id
-    return lookup.get(query_email, "1754")
-
-def create_bulk_order(
-    all_descriptions: list[str],
-    all_quantities: list[int],
-    all_product_ids: list[str]
-) -> tuple[list[str], list[int], list[str]]:
-    """
-    Create a bulk order by grouping items with the same product code and summing quantities.
-    Extract the common part of all descriptions to form the bulk description.
-
-    Args:
-        all_descriptions (list): List of detailed descriptions.
-        all_quantities (list): List of quantities.
-        all_product_ids (list): List of product ids.
-
-    Returns:
-        tuple: Three lists - bulk descriptions, bulk quantities and bulk product ids.
-    """
-    # Group items by product code
     grouped_items = {}
     for description, quantity, product_id in zip(all_descriptions, all_quantities, all_product_ids):
         if product_id not in grouped_items:
-            grouped_items[product_id] = {'descriptions': [], 'total_quantity': 0}
-        grouped_items[product_id]['descriptions'].append(description)
-        grouped_items[product_id]['total_quantity'] += int(quantity)
+            grouped_items[product_id] = {"descriptions": [], "total_quantity": 0}
+        grouped_items[product_id]["descriptions"].append(description)
+        grouped_items[product_id]["total_quantity"] += float(quantity)
 
-    # Prepare the output lists    
     bulk_descriptions = []
     bulk_quantities = []
     bulk_product_ids = []
-
     for product_id, data in grouped_items.items():
-        descriptions = data['descriptions']
-        total_quantity = data['total_quantity']
+        descriptions = data["descriptions"]
+        total_quantity = data["total_quantity"]
 
-        # Extract the base description from the first description in the group
         if descriptions and '-' in descriptions[0]:
             bulk_description = descriptions[0].split('-', 1)[0].strip()
         else:
             bulk_description = descriptions[0] if descriptions else ''
 
-        # Add to the output lists        
         bulk_descriptions.append(bulk_description)
         bulk_quantities.append(total_quantity)
         bulk_product_ids.append(product_id)
 
     return bulk_descriptions, bulk_quantities, bulk_product_ids
-    
-def process_submission(input_data: dict[str, object]) -> dict[str, object]:
-    """
-    Process the input JSON data to filter, sort, and return combined results.
 
-    Args:
-        input_data (dict): A dictionary containing JSON data to be processed.
 
-    Returns:
-        dict: A dictionary containing email, all_descriptions, all_quantities, and all_product_codes.
+def process_submission(input_data: dict) -> dict:
     """
-    # Parse the JSON data
+    Process the submission by filtering, sorting, and organizing data.
+    Depending on the email, return either a bulk order or a line list.
+    """
     submission = get_submission_by_id()
-    
-    # Check if the input or content is missing
+
+    # Early exit if input or content is missing
     if not input_data or 'content' not in submission:
-        return {"client_id": "","email": "", "sales_rep":"", "all_descriptions": [], "all_quantities": [], "all_product_ids": []}
+        return {
+            "client_id": "",
+            "email": "",
+            "sales_rep": "",
+            "all_descriptions": [],
+            "all_quantities": [],
+            "all_product_ids": []
+        }
 
-    # Extract the answers field
-    answers = filter_answers(submission)
+    # Process submission data
+    answers = filter_submission(submission)
+    answers = sort_by_order(answers)
 
-    # Filter endpoints that contains field "answer"
-    answers_with_field = filter_endpoints_with_answer(answers)
+    # Extract email from answers
+    email_dict = filter_answers_by_type(answers, "control_email")
+    email = next(iter(email_dict.values()), "").lower()
 
-    # Extract the email and sales rep
-    email, sales_rep = filter_email_and_salesrep(answers_with_field)
+    # Extract sales_rep from answers
+    sales_rep_dict = filter_answers_by_type(answers, "control_dropdown")
+    sales_rep = next(iter(sales_rep_dict.values()), "")
+    if sales_rep.upper() == "JOHN":
+        sales_rep = "JE"
+
+    # Filter endpoints containing tables from answers 
+    tables = filter_answers_by_type(answers, "control_matrix", single=False, extract=False, require_list_answer=True)
     
-    # Filter endpoints that contains field type "control_matrix" (tables)
-    control_matrix_type = filter_type_control_matrix(answers_with_field)
-
-    # Split "mrows" values separated by '|'
-    split_mrows_endpoints = split_mrows_values(control_matrix_type)
-
-    # Flatten "answer" values and handle duplication of "mrows"
+    # Format tables
+    split_mrows_endpoints = split_mrows_values(tables)
     flattened_endpoints = flatten_answers_and_duplicate_mrows(split_mrows_endpoints)
-
-    # Sort the filtered endpoints by "order"
-    sorted_answers = sort_by_order(flattened_endpoints)
-
-    # Combine descriptions and quantities
-    all_descriptions, all_quantities = combine_descriptions_and_quantities(sorted_answers)
-
-    # Extract all product codes
-    all_product_codes = extract_text_before_dash(sorted_answers)
-
-    # Filter out empty quantities and corresponding rows
+    
+    all_descriptions, all_quantities = combine_descriptions_and_quantities(flattened_endpoints)
+    
+    all_product_codes = extract_text_before_dash(flattened_endpoints)
     all_descriptions, all_quantities, all_product_codes = filter_out_empty_quantities(
-    all_descriptions, all_quantities, all_product_codes
-)
-    # Converting product codes into product ids
+        all_descriptions, all_quantities, all_product_codes
+    )
     all_product_ids = map_product_codes_to_ids(all_product_codes)
 
-    # Finding Client Id
-    client_id = get_client_id(CLIENT_DICT, email)
-
-    if email not in LINE_LIST_CUSTOMERS:
-        # Creating bulk order
-        bulk_descriptions, bulk_quantities, bulk_product_ids = create_bulk_order(
-        all_descriptions, all_quantities, all_product_ids)
-
-        # Return the final result (bulk order)
-        return {
-            "client_id": client_id,
-            "email": email,
-            "sales_rep": sales_rep,
-            "all_descriptions": bulk_descriptions,
-            "all_quantities": bulk_quantities,
-            "all_product_ids": bulk_product_ids
-    }
-
-    # Return the final result (line list)
+    # Decide whether to create a bulk order or use the line list based on the email.
+    descriptions, quantities, product_ids = (
+        create_bulk_order(all_descriptions, all_quantities, all_product_ids)
+        if email not in LINE_LIST_CUSTOMERS
+        else (all_descriptions, all_quantities, all_product_ids)
+    )
+    
     return {
-        "client_id": client_id,        
+        "client_id": CLIENT_ID,
         "email": email,
         "sales_rep": sales_rep,
-        "all_descriptions": all_descriptions,
-        "all_quantities": all_quantities,
-        "all_product_ids": all_product_ids
+        "all_descriptions": descriptions,
+        "all_quantities": quantities,
+        "all_product_ids": product_ids
     }
 
+
+# Execute the processing of the submission
 output = process_submission(input_data)
